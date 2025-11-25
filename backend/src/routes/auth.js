@@ -21,7 +21,7 @@ router.get('/google/callback' , (req, res, next)=>{
         if(!user){
             if(info && info.reason === 'signup'){
                 console.log/('새로운 사용자 : 회원가입 필요');
-                return res.redirect('/user/signup');
+                return res.redirect('/api/user/signup');
             }
             return res.redirect('/projects/1');
         }
