@@ -31,7 +31,7 @@ router.get('/google/callback' , (req, res, next)=>{
                 return next(loginErr)
             }
             //TODO: 이부분 수정하기
-            res.redirect('http://localhost/projects/1');
+            res.redirect('/projects/1');
         })
     })(req, res, next);
 })
