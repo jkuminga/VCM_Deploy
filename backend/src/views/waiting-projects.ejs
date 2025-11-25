@@ -275,7 +275,7 @@
                 </div>
               </div>
               <div class="actions">
-                <a class="detail-btn" href="/manage/detail/<%= project.id %>">세부 정보</a>
+                <a class="detail-btn" href="/api/manage/detail/<%= project.id %>">세부 정보</a>
               </div>
             </article>
           <% }) %>
@@ -292,7 +292,7 @@
       function goToRegistry() {
         const value = registrySelect?.value;
         if (value) {
-          window.location.href = `/manage/list/${encodeURIComponent(value)}`;
+          window.location.href = `/api/manage/list/${encodeURIComponent(value)}`;
         }
       }
 

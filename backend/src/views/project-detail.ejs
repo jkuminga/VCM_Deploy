@@ -279,7 +279,7 @@
         statusResult.textContent = '저장 중...';
 
         try {
-          const res = await fetch('/manage/status', {
+          const res = await fetch('/api/manage/status', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
