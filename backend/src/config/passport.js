@@ -12,14 +12,14 @@ passport.use(new GoogleStrategy({
     async (req, at, rt, profile, done)=>{
         try{
             const profileEmail = profile._json?.email;
-            const [rows] = await pool.query('SELECT * FROM user WHERE email = ?', [profileEmail]);
+            const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [profileEmail]);
 
             if(rows.length > 0){
                 const date = new Date();
                 const formatted = date.toISOString().slice(0, 19).replace('T', ' ');
 
 
-                await pool.query('UPDATE user SET last_login = ?', [formatted]);
+                await pool.query('UPDATE users SET last_login = ?', [formatted]);
                 logWithTimestamp('✅ 인증 성공, last_login 업데이트')
                 return done(null, rows[0])
             }
@@ -48,7 +48,7 @@ passport.serializeUser((user, done)=>{
 
 passport.deserializeUser(async (id, done)=>{
     try{
-        const [[user]] = await pool.query('SELECT * FROM user WHERE user_id = ?',[id])
+        const [[user]] = await pool.query('SELECT * FROM users WHERE user_id = ?',[id])
         logWithTimestamp('➕Deserialized!')
 
         if(!user){

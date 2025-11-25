@@ -647,7 +647,7 @@ export default {
         const projectId = req.params.projectId;
 
         try{
-            const [rows] = await pool.query('SELECT c.id, c.content, u.email FROM user_project_comments c JOIN user u ON c.user_id = u.user_id WHERE c.project_id = ?', [projectId]);
+            const [rows] = await pool.query('SELECT c.id, c.content, u.email FROM user_project_comments c JOIN users u ON c.user_id = u.user_id WHERE c.project_id = ?', [projectId]);
 
             logWithTimestamp('✅ 프로젝트에 등록된 댓글 목록 불러오기 완료')
             res.status(200).json(rows)

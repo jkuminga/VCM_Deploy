@@ -24,7 +24,7 @@ export default {
             refreshToken: pendingProfile.refreshToken,
         };
 
-        const [result] = await pool.query("INSERT INTO user (name, google_id, email, refresh_token, role) VALUES (?,?,?,?,?)", 
+        const [result] = await pool.query("INSERT INTO users (name, google_id, email, refresh_token, role) VALUES (?,?,?,?,?)", 
             [newUser.displayName, newUser.google_id, newUser.email, newUser.refreshToken, newUser.role]
         );
 
