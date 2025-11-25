@@ -28,7 +28,7 @@ export default {
             [newUser.displayName, newUser.google_id, newUser.email, newUser.refreshToken, newUser.role]
         );
 
-        newUser['id'] = result.insertId;
+        newUser['user_id'] = result.insertId;
 
         delete req.session.signupProfile;
 
