@@ -87,9 +87,7 @@ export default {
 
             const projectId = result['project_id'];
 
-            // const [rows] = await pool.query('SELECT * FROM ex_transactions WHERE project_id = ?', [projectId]);
-            const [rows] = await pool.query('SELECT * FROM credits WHERE project_id = ?', [projectId]);
-            
+            const [rows] = await pool.query('SELECT * FROM ex_transactions WHERE project_id = ?', [projectId]);
 
             logWithTimestamp(rows);
 
@@ -255,7 +253,7 @@ export default {
 
     }, 
 
-    // 프로젝트 수정 로직
+    // 퍼블릭 프로젝트 수정 로직
     editProject : async(req, res)=>{
         // 1. body 받아와서 전처리
         // 2 DB-update
@@ -295,28 +293,396 @@ export default {
         }
     },
 
-    // 프로젝트 삭제 로직
-    deleteProject : async(req, res)=>{
-        // 폼 오류 시 에러 전송 생성
-        const id = req.params.id;
+    // ========================================================================
+    // 처리 대기중인 프로젝트 관련 API
+    // ========================================================================
+    addNewUserProject :async(req ,res)=>{
+        if(!req.user){
+            logWithTimestamp('🛑[401 Unauthorized]-로그인 된 사용자 없음');
+            return res.status(401).json({
+                "code" : 401,
+                "status" : "Unauthorized",
+                "message" : "로그인 된 사용자가 없습니다."
+            })
+        }
+
+        const data = req.body;
+
+        const userId = req.user.user_id;
+        const projectName = data['project_name'];
+        const developerName = data['project_developer'];
+        const registry = data['registry_to_register'];
+        const scope = data['scope'];
+        const type = data['type'];
+        const country = data['country'];
+        const description = data['description'];
+        const methodology = data['methodology'];
+        const baselineSummary = data['baseline_summary'];
+        const monitoringPlan = data['monitoring_plan'];
+        const additionality = data['additionality'];
+        const removalOrReduction = data['removal_or_reduction']
+        const codeChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const generatePublicCode = () => Array.from({ length: 8 }, () => codeChars[Math.floor(Math.random() * codeChars.length)]).join('');
+
 
         try{
-            const result = await pool.query('DELETE FROM projects WHERE id = ?', [id]);
+            let publicCode = null;
+            const maxAttempts = 5;
+            for(let attempt = 0; attempt < maxAttempts; attempt += 1){
+                const candidate = generatePublicCode();
+                const [[{count}]] = await pool.query('SELECT COUNT(*) as count FROM user_projects WHERE public_code = ?', [candidate]);
+                if(count === 0){
+                    publicCode = candidate;
+                    break;
+                }
+            }
 
-            logWithTimestamp('✅프로젝트 삭제 완료');
+            if(!publicCode){
+                throw new Error('public_code 생성 실패');
+            }
+
+            const [result] = await pool.query('INSERT INTO user_projects (user_id, public_code, project_name, developer_name, registry, scope, type, country, description, methodology, baseline_summary, monitoring_plan, additionality, removal_or_reduction) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', 
+                [userId, publicCode, projectName, developerName, registry, scope, type, country, description, methodology, baselineSummary, monitoringPlan,additionality, removalOrReduction])
+
+            logWithTimestamp('✅ 새로운 프로젝트 등록 요청 완료')
+
             res.status(200).json({
                 "code": 200,
                 "status": "success",
-                "message": "프로젝트 삭제 완료"
+                "message": "새로운 프로젝트 등록 요청 완료"
             })
-        }catch(error){
-            errorWithTimestamp('❌프로젝트 삭제 실패', error);
+            
+        }catch(err){
+            errorWithTimestamp(`❌ 새로운 프로젝트 등록 실패`, err);
             res.status(500).json({
                 "code": 500,
                 "status": "Internal Server Error",
-                "message": "프로젝트 삭제 실패 ",
-                "error" : error
+                "message": "새로운 프로젝트 등록 요청 실패 ",
+                "error" : err
             })
         }
     },
+
+    getUserProjectsList : async(req, res)=>{
+        const rawPageNo = Number.parseInt(req.params.pageNo, 10);
+        const pageNo = Number.isNaN(rawPageNo) || rawPageNo < 1 ? 1 : rawPageNo;
+        const offset = (pageNo - 1)* LIMIT;
+
+        const APPROVED = 'approved';
+
+        const projectId = req.params.projectId;
+        
+        try{
+            const [results] = await pool.query("SELECT u.id, u.project_name, u.country, u.scope, COALESCE(SUM(CASE WHEN r.reaction = 'like' THEN 1 ELSE 0 END), 0) AS like_count, COALESCE(SUM(CASE WHEN r.reaction = 'dislike' THEN 1 ELSE 0 END), 0) AS dislike_count FROM user_projects AS u LEFT JOIN user_project_reactions AS r ON u.id = r.project_id WHERE u.status = ? GROUP BY u.id, u.project_name, u.country, u.scope ORDER BY u.id DESC LIMIT ? OFFSET ?", [APPROVED,LIMIT, offset]);
+
+            const [[{count}]] = await pool.query('SELECT COUNT(*) as count FROM user_projects WHERE status = ?', [APPROVED]);
+
+            logWithTimestamp(`✅ 대기중인 프로젝트 ${pageNo} 페이지 목록 불러오기 완료`)
+ 
+            const pagination = {
+                    "current_page": pageNo,
+                    "total_pages" : Math.ceil(count / LIMIT),
+                    "total_items": count,
+                    "limit": LIMIT
+                };
+            const data = results
+                
+            res.status(200).json({
+                "pagination": {
+                    "current_page": pageNo,
+                    "total_pages" : Math.ceil(count / LIMIT),
+                    "total_items": count,
+                    "limit": LIMIT
+                },
+                "data": results
+            })
+        }catch(err){
+            errorWithTimestamp(`❌ 프로젝트 수정 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "새로운 프로젝트 등록 실패 ",
+                "error" : err
+            })
+        }
+
+    },
+
+    getUserProjectDetail :async (req, res)=>{
+        // 사용자 프로제그 세부정보 반환
+        // router.get('/waiting/detail/:projectId', (req, res)=>{
+        //     projectsController.getUserProjectDetail(req, res)
+        // })
+        const projectId = req.params.projectId;
+
+
+        try{
+            const [[detail]] = await pool.query('SELECT * FROM user_projects WHERE id = ?', [projectId]);
+
+            const [[counts]] = await pool.query("SELECT COALESCE(SUM(CASE WHEN reaction = 'like' THEN 1 ELSE 0 END), 0) AS like_count, COALESCE(SUM(CASE WHEN reaction = 'dislike' THEN 1 ELSE 0 END), 0) AS dislike_count FROM user_project_reactions WHERE project_id = ?", [projectId]);
+
+            detail['like_count'] = parseInt(counts['like_count']);
+            detail['dislike_count'] = parseInt(counts['dislike_count']);
+
+            logWithTimestamp('✅대기 중인 프로젝트 세부 정보 불러오기 완료')
+
+            res.status(200).json(detail);
+        }catch(err){
+            errorWithTimestamp(`❌ 대기 중인 프로젝트 세부 정보 불러오기 완료`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "대기 중인 프로젝트 세부 정보 불러오기 완료 ",
+                "error" : err
+            })
+        }
+
+    },
+
+    editUserProjectDetail :async (req, res)=>{
+        if(!req.user){
+            logWithTimestamp('🛑[401 Unauthorized]-로그인 된 사용자 없음');
+            return res.status(401).json({
+                code : 401,
+                status : 'Unauthorized'
+            })
+        }
+
+        const projectId = req.params.projectId;
+        const data = req.body;
+
+        const projectName = data['project_name'] //nn
+        const projectDeveloper = data['project_developer'];//nn
+        const registry = data['registry']; //nn
+        const scope = data['scope']; //nn
+        const type = data['type'];     
+        const country = data['country']; // nn
+        const description = data['description']; 
+        const methodology = data['methodology'];
+        const baselineSummary = data['baseline_summary'];
+        const monitoringPlan = data['monitoring_plan'];
+        const additionality = data['additionality'];
+        const removalOrReduction = data['removal_or_reduction'];
+
+        const requiredFields = [
+            projectName,
+            projectDeveloper,
+            registry,
+            scope,
+            country
+        ];
+
+        if(requiredFields.some((field) => !field || !String(field).trim())){
+            return res.status(400).json({
+                code: 400,
+                status: "Bad Request",
+                message: "필수 항목이 비어있습니다."
+            })
+        }
+
+        try{
+            await pool.query('UPDATE user_projects SET project_name = ?, registry = ?, scope=?, type=?, removal_or_reduction =?, methodology =?, country =?, developer_name =?, description =? ,baseline_summary=?, monitoring_plan =? , additionality=? WHERE id= ? ',
+                [projectName,registry, scope, type, removalOrReduction, methodology,country, projectDeveloper,description,baselineSummary, monitoringPlan,additionality,projectId]
+            )
+
+            logWithTimestamp('✅ 프로젝트 수정 완료')
+            res.status(200).json({
+                result : 'done'
+            })            
+        }catch(err){
+            errorWithTimestamp(`❌ 프로젝트 수정 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "프로젝트 수정 실패 ",
+                "error" : err
+            })
+        }
+    },
+
+    // 싱글 프로젝트에 달았던 리액션 보기
+    getReaction : async (req, res)=>{
+        // 1. 로그인 상태 확인하고 만약 로그인이 안되있으면 204
+        // 2. userId = req.user.user_id , pjid = req.params
+        // 3. select reaction from project
+        // 4. if no data -> 200 null
+        // 5. else -> reaction
+
+        if(!req.user){
+            logWithTimestamp('⚙️로그인 상태가 아닙니다.')
+            return res.status(200).json({
+                reaction : null
+            })
+        }
+
+        const userId = req.user.user_id;
+        const projectId = req.params.projectId;
+
+        try{
+            const [rows] = await pool.query('SELECT reaction FROM user_project_reactions WHERE user_id = ? AND project_id = ?', [userId, projectId]);
+            if(rows.length === 0 ){
+                logWithTimestamp('⚙️해당 프로젝트에 등록된 리액션 없음');
+                return res.status(200).json({
+                    reaction : null
+                })
+            }
+            const reaction = rows[0]['reaction'];
+
+            logWithTimestamp(`✅ 프로젝트 id ${projectId}의 리액션 가져오기 완료`);
+            return res.status(200).json({
+                reaction : reaction
+            })
+        }catch(err){
+            errorWithTimestamp(`❌ 프로젝트 id ${projectId}의 리액션 가져오기 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "프로젝트의 리액션 가져오기 완료",
+                "error" : err
+            })
+        }
+    },
+
+    // 싱글 프로젝트에 리엑션 달기
+    postReaction : async (req, res)=>{
+        const userId = req.user.user_id;
+        const projectId = req.params.projectId;
+        const data = req.body;
+        const reaction = data['reaction'];
+
+        // 로그인 상태가 아닌 경우
+        if(!req.user){
+            errorWithTimestamp('🛑[401 Unauthorized]-로그인 된 사용자 없음');
+            return res.status(401).json({
+                "code" : 401,
+                "status" : "Unauthorized",
+                "message" : "로그인 된 사용자가 없습니다."
+            })
+        }
+
+        // 전송한 Reaction !== like || !== dislike
+        if (!['like', 'dislike'].includes(reaction)) {
+            errorWithTimestamp('❌ 잘못된 리액션 전송');
+            return res.status(400).json({ message: 'Invalid reaction' });
+        }
+
+        try{
+            const [rows] = await pool.query('SELECT reaction from user_project_reactions WHERE user_id = ?', [userId])
+
+            if(rows.length === 0){
+                await pool.query('INSERT INTO user_project_reactions (user_id, project_id, reaction) VALUES (?,?,?)', [userId, projectId, reaction])
+                logWithTimestamp(`✅ 새로운 리액션 등록 : {사용자 : ${userId}, 프로젝트ID : ${projectId}}`)
+                return res.status(200).json({result : 'done'})
+            }else{
+                const currentReaction = rows[0]['reaction'];
+                console.log(currentReaction);
+                if(currentReaction === reaction){
+                    await pool.query('DELETE FROM user_project_reactions WHERE user_id =? AND project_id = ?', [userId, projectId]);
+                    logWithTimestamp('✅ 기존의 리액션 삭제');
+                    return res.status(200).json({result : 'done'})
+                }else{
+                    await pool.query('UPDATE user_project_reactions SET reaction = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND project_id = ?',
+                        [reaction, userId, projectId]
+                    )
+                    logWithTimestamp(`✅ 리액션 변경 : ${currentReaction} -> ${reaction}`);
+                    return res.status(200).json({result : 'done'})
+                }
+            }
+        }catch(err){
+            errorWithTimestamp(`❌ 새로운 리액션 달기 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "새로운 리액션 달기 성공",
+                "error" : err
+            })
+        }
+    },
+
+    // 새로운 코멘트 작성
+    postComment : async(req, res)=>{
+        if(!req.user){
+            errorWithTimestamp('🛑[401 Unauthorized]-로그인 된 사용자 없음');
+            return res.status(401).json({
+                code : 401,
+                status : 'Unauthorized'
+            })
+        }
+
+        const data = req.body;
+        const userId = req.user.user_id;
+        const projectId = req.params.projectId;
+        console.log('prjectId', projectId);
+
+        if(data['content'] === ""){
+            errorWithTimestamp('❌ 입력된 내용이 없습니다.');
+            res.status(400).json({
+                code: 400,
+                status : "Bad Request"
+            })
+        }
+
+        try{
+            await pool.query('INSERT INTO user_project_comments (project_id, user_id, content) VALUES (?,?,?)', [projectId, userId, data['content']])
+
+            logWithTimestamp(`✅프로젝트 ${projectId}에 댓글 달기 완료`);
+            res.status(200).json({
+                code : 200,
+                status : 'OK',
+                message : `프로젝트 ${projectId}에 댓글 달기 완료`
+            })
+        }catch(err){
+            errorWithTimestamp(`❌ 프로젝트에 댓글 달기 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "프로젝트에 댓글 달기 실패 ",
+                "error" : err
+            })
+        }
+    },
+
+    // 코멘트 목록 불러오기
+    getComments : async (req ,res)=>{
+        const projectId = req.params.projectId;
+
+        try{
+            const [rows] = await pool.query('SELECT c.id, c.content, u.email FROM user_project_comments c JOIN user u ON c.user_id = u.user_id WHERE c.project_id = ?', [projectId]);
+
+            logWithTimestamp('✅ 프로젝트에 등록된 댓글 목록 불러오기 완료')
+            res.status(200).json(rows)
+        }catch(err){
+            errorWithTimestamp(`❌ 프로젝트에 등록된 댓글 목록 불러오기 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "프로젝트에 등록된 댓글 목록 불러오기 실패 ",
+                "error" : err
+            })
+        }
+
+    },
+
+    // 싱글 코멘트 삭제하기
+    deleteComments : async (req, res)=>{
+        const commentId = req.params.commentId;
+        try{
+            await pool.query('DELETE FROM user_project_comments WHERE id = ?', [commentId]);
+
+            logWithTimestamp('✅ 댓글 삭제 완료')
+            res.status(200).json({
+                result : 'done',
+            })
+        }catch(err){
+            errorWithTimestamp(`❌ 댓글 삭제 실패`, err);
+            res.status(500).json({
+                "code": 500,
+                "status": "Internal Server Error",
+                "message": "댓글 삭제 실패",
+                "error" : err
+            })
+        }
+
+    }
+
 };
